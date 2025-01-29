@@ -169,9 +169,17 @@ void handle_player_input(int player_index) {
         snprintf(response, sizeof(response), "The correct guess is %d\n", target_number);
         broadcast_message(response, -1);
 
-        // Reset game
+        // Reset game by disconnecting all players
+        for (int i = 0; i < max_number_of_players; ++i) {
+            if (players[i].active) {
+                close(players[i].socket);
+                players[i].active = 0;
+                printf("Player %d disconnected due to game reset.\n", players[i].id);
+            }
+        }
+
+        // Generate a new target number
         target_number = rand() % 100 + 1;
-        printf("New target number: %d\n", target_number);
     }
 }
 
@@ -184,7 +192,7 @@ int main(int argc, char *argv[]) {
     int seed = atoi(argv[2]);
     max_number_of_players = atoi(argv[3]);
 
-    if (port <= 0 || port > 65535 || max_number_of_players <= 1) {
+    if (port <= 0 || port > 65535 || max_number_of_players <= 0) {
         usage();
     }
 
