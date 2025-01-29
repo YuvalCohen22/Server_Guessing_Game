@@ -22,6 +22,7 @@ int server_socket;
 Player players[MAX_PLAYERS];
 int max_number_of_players;
 int target_number;
+int player_count = 0;
 fd_set read_fds, write_fds;
 
 void usage() {
@@ -79,7 +80,6 @@ void init_server(int port, int seed, int max_players) {
         exit(EXIT_FAILURE);
     }
 
-    printf("Server initialized on port %d\n", port);
 }
 
 void broadcast_message(const char *message, int exclude_id) {
@@ -104,20 +104,13 @@ void handle_new_connection() {
     int player_id = -1;
     for (int i = 0; i < max_number_of_players; ++i) {
         if (!players[i].active) {
+            player_count++;
             players[i].socket = client_socket;
             players[i].id = i + 1;
             players[i].active = 1;
             player_id = players[i].id;
             break;
         }
-    }
-
-    if (player_id == -1) {
-        // Max players reached
-        const char *msg = "Server full. Try again later.\n";
-        send(client_socket, msg, strlen(msg), 0);
-        close(client_socket);
-        return;
     }
 
     // Send welcome message to the new player
@@ -138,7 +131,7 @@ void handle_player_input(int player_index) {
 
     if (bytes_read <= 0) {
         // Player disconnected
-        printf("Player %d disconnected.\n", players[player_index].id);
+        player_count--;
         char disconnect_msg[MAX_BUFFER];
         snprintf(disconnect_msg, sizeof(disconnect_msg), "Player %d disconnected\n", players[player_index].id);
         broadcast_message(disconnect_msg, players[player_index].id);
@@ -150,7 +143,6 @@ void handle_player_input(int player_index) {
 
     buffer[bytes_read] = '\0';
     int guess = atoi(buffer);
-    printf("Player %d guessed %d\n", players[player_index].id, guess);
 
     char response[MAX_BUFFER];
     snprintf(response, sizeof(response), "Player %d guessed %d\n", players[player_index].id, guess);
@@ -166,7 +158,7 @@ void handle_player_input(int player_index) {
         snprintf(response, sizeof(response), "Player %d wins\n", players[player_index].id);
         broadcast_message(response, -1);
 
-        snprintf(response, sizeof(response), "The correct guess is %d\n", target_number);
+        snprintf(response, sizeof(response), "The correct guessing is %d\n", target_number);
         broadcast_message(response, -1);
 
         // Reset game by disconnecting all players
@@ -174,7 +166,6 @@ void handle_player_input(int player_index) {
             if (players[i].active) {
                 close(players[i].socket);
                 players[i].active = 0;
-                printf("Player %d disconnected due to game reset.\n", players[i].id);
             }
         }
 
@@ -184,9 +175,8 @@ void handle_player_input(int player_index) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 4) {
+    if (argc != 4)
         usage();
-    }
 
     int port = atoi(argv[1]);
     int seed = atoi(argv[2]);
@@ -204,7 +194,6 @@ int main(int argc, char *argv[]) {
     FD_ZERO(&write_fds);
 
     while (1) {
-        FD_SET(server_socket, &read_fds);
         int max_sd = server_socket;
 
         for (int i = 0; i < max_number_of_players; ++i) {
@@ -215,6 +204,11 @@ int main(int argc, char *argv[]) {
                 }
             }
         }
+
+        if (player_count == max_number_of_players)
+            FD_CLR(server_socket, &read_fds);
+        else
+            FD_SET(server_socket, &read_fds);
 
         int activity = select(max_sd + 1, &read_fds, NULL, NULL, NULL);
         if (activity < 0 && errno != EINTR) {
