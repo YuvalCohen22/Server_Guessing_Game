@@ -252,15 +252,15 @@ int main(int argc, char *argv[]) {
         usage();
     }
 
-    signal(SIGINT, handle_signal);
-
-    init_server(port, seed, max_number_of_players);
-
     players = (Player*)malloc(sizeof(Player) * max_number_of_players);
     if (players == NULL) {
         perror("malloc");
         exit(EXIT_FAILURE);
     }
+
+    signal(SIGINT, handle_signal);
+
+    init_server(port, seed, max_number_of_players);
 
     fd_set read_fds, write_fds;
 
