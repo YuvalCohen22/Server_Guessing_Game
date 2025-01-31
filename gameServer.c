@@ -30,8 +30,12 @@ int max_number_of_players;
 int target_number;
 int player_count = 0;
 int max_fd = 0;
+int game_over = 0;
+fd_set temp_read_fds, temp_write_fds;
 
 void free_player(int index) {
+    FD_CLR(players[index].socket, &temp_read_fds);
+    FD_CLR(players[index].socket, &temp_write_fds);
     players[index].active = 0;
     close(players[index].socket);
     Msg_q* ptr = players[index].head;
@@ -99,7 +103,7 @@ void init_server(int port, int seed, int max_players) {
 
 }
 
-void enqueue_message(const char *message, int exclude_id, fd_set* write_fds) {
+void enqueue_message(const char *message, int exclude_id) {
     for (int i = 0; i < max_number_of_players; ++i) {
         if (players[i].active && players[i].id != exclude_id) {
             Msg_q* ptr = players[i].head;
@@ -115,12 +119,12 @@ void enqueue_message(const char *message, int exclude_id, fd_set* write_fds) {
                 players[i].head->next = NULL;
                 strcpy(players[i].head->message, message);
             }
-            FD_SET(players[i].socket, write_fds);
+            FD_SET(players[i].socket, &temp_write_fds);
         }
     }
 }
 
-void enqueue(const char *message, int id, fd_set* write_fds) {
+void enqueue(const char *message, int id) {
     Msg_q* ptr = players[id].head;
     if (ptr != NULL) {
         while (ptr->next != NULL)
@@ -134,21 +138,28 @@ void enqueue(const char *message, int id, fd_set* write_fds) {
         players[id].head->next = NULL;
         strcpy(players[id].head->message, message);
     }
-    FD_SET(players[id].socket, write_fds);
+    FD_SET(players[id].socket, &temp_write_fds);
 }
 
-void send_message_to_player(int index, fd_set* write_fds) {
+void send_message_to_player(int index) {
         if (players[index].active) {
             Msg_q* message = players[index].head;
             players[index].head = players[index].head->next;
             send(players[index].socket, message->message, strlen(message->message), 0);
             free(message);
         }
-        if (players[index].head == NULL)
-            FD_CLR(players[index].socket, write_fds);
+        if (players[index].head == NULL) {
+            FD_CLR(players[index].socket, &temp_write_fds);
+            if (game_over) {
+                free_player(index);
+                player_count--;
+            }
+
+        }
+
 }
 
-void handle_new_connection(fd_set* write_fds, fd_set* read_fds) {
+void handle_new_connection() {
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
     int client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &addr_len);
@@ -176,20 +187,20 @@ void handle_new_connection(fd_set* write_fds, fd_set* read_fds) {
         }
     }
 
-    FD_SET(players[ind].socket, read_fds);
+    FD_SET(players[ind].socket, &temp_read_fds);
 
     // Send welcome message to the new player
     char welcome_msg[MAX_BUFFER];
     snprintf(welcome_msg, sizeof(welcome_msg), "Welcome to the game, your id is %d\n", player_id);
-    enqueue(welcome_msg, ind, write_fds);
+    enqueue(welcome_msg, ind);
 
     // Notify other players
     snprintf(welcome_msg, sizeof(welcome_msg), "Player %d joined the game\n", player_id);
-    enqueue_message(welcome_msg, player_id, write_fds);
+    enqueue_message(welcome_msg, player_id);
 
 }
 
-void handle_player_input(int player_index, fd_set* write_fds, fd_set* read_fds) {
+void handle_player_input(int player_index) {
     char buffer[MAX_BUFFER];
     int bytes_read = read(players[player_index].socket, buffer, sizeof(buffer) - 1);
 
@@ -198,11 +209,9 @@ void handle_player_input(int player_index, fd_set* write_fds, fd_set* read_fds) 
         player_count--;
         char disconnect_msg[MAX_BUFFER];
         snprintf(disconnect_msg, sizeof(disconnect_msg), "Player %d disconnected\n", players[player_index].id);
-        enqueue_message(disconnect_msg, players[player_index].id, write_fds);
+        enqueue_message(disconnect_msg, players[player_index].id);
         if (max_fd == players[player_index].socket)
             max_fd--;
-        FD_CLR(players[player_index].socket, read_fds);
-        FD_CLR(players[player_index].socket, write_fds);
         free_player(player_index);
 
         return;
@@ -213,31 +222,21 @@ void handle_player_input(int player_index, fd_set* write_fds, fd_set* read_fds) 
 
     char response[MAX_BUFFER];
     snprintf(response, sizeof(response), "Player %d guessed %d\n", players[player_index].id, guess);
-    enqueue_message(response, -1, write_fds);
+    enqueue_message(response, -1);
 
     if (guess > target_number) {
         snprintf(response, sizeof(response), "The guess %d is too high\n", guess);
-        enqueue_message(response, -1, write_fds);
+        enqueue_message(response, -1);
     } else if (guess < target_number) {
         snprintf(response, sizeof(response), "The guess %d is too low\n", guess);
-        enqueue_message(response, -1, write_fds);
+        enqueue_message(response, -1);
     } else {
+        game_over = 1;
         snprintf(response, sizeof(response), "Player %d wins\n", players[player_index].id);
-        enqueue_message(response, -1, write_fds);
+        enqueue_message(response, -1);
 
         snprintf(response, sizeof(response), "The correct guessing is %d\n", target_number);
-        enqueue_message(response, -1, write_fds);
-
-        // Reset game by disconnecting all players
-        for (int i = 0; i < max_number_of_players; ++i) {
-            if (players[i].active)
-                free_player(i);
-        }
-
-        // Generate a new target number
-        target_number = rand() % 100 + 1;
-
-        max_fd = server_socket;
+        enqueue_message(response, -1);
     }
 }
 
@@ -253,22 +252,21 @@ int main(int argc, char *argv[]) {
         usage();
     }
 
+    signal(SIGINT, handle_signal);
+
+    init_server(port, seed, max_number_of_players);
+
     players = (Player*)malloc(sizeof(Player) * max_number_of_players);
     if (players == NULL) {
         perror("malloc");
         exit(EXIT_FAILURE);
     }
 
-    signal(SIGINT, handle_signal);
-
-    init_server(port, seed, max_number_of_players);
-
     fd_set read_fds, write_fds;
 
     FD_ZERO(&read_fds);
     FD_ZERO(&write_fds);
 
-    fd_set temp_read_fds, temp_write_fds;
 
     FD_ZERO(&temp_read_fds);
     FD_ZERO(&temp_write_fds);
@@ -300,14 +298,23 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < max_number_of_players && activity > 0; ++i) {
             if (players[i].active && FD_ISSET(players[i].socket, &read_fds)) {
                 printf("Server is ready to read from player %d on socket %d\n", players[i].id, players[i].socket);
-                handle_player_input(i, &temp_write_fds, &temp_read_fds);
+                handle_player_input(i);
                 activity--;
             }
             if (players[i].active && FD_ISSET(players[i].socket, &write_fds)) {
                 printf("Server is ready to write to player %d on socket %d\n", players[i].id, players[i].socket);
-                send_message_to_player(i, &temp_write_fds);
+                send_message_to_player(i);
                 activity--;
             }
+        }
+
+        // Reset to new game
+        if (game_over && player_count == 0) {
+            // Generate a new target number
+            target_number = rand() % 100 + 1;
+
+            max_fd = server_socket;
+            game_over = 0;
         }
 
     }
