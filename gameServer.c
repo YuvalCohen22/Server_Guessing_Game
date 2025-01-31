@@ -141,7 +141,7 @@ void send_message_to_player(int index, fd_set* write_fds) {
         if (players[index].active) {
             Msg_q* message = players[index].head;
             players[index].head = players[index].head->next;
-            send(players[index].socket, message->message, sizeof(message->message), 0);
+            send(players[index].socket, message->message, strlen(message->message), 0);
             free(message);
         }
         if (players[index].head == NULL)
@@ -170,13 +170,13 @@ void handle_new_connection(fd_set* write_fds, fd_set* read_fds) {
             players[i].active = 1;
             player_id = players[i].id;
             players[i].head = NULL;
-            if (max_fd < players->socket)
-                max_fd = players->socket;
+            if (max_fd < players[i].socket)
+                max_fd = players[i].socket;
             break;
         }
     }
 
-    FD_SET(players[player_id].socket, read_fds);
+    FD_SET(players[ind].socket, read_fds);
 
     // Send welcome message to the new player
     char welcome_msg[MAX_BUFFER];
@@ -189,8 +189,7 @@ void handle_new_connection(fd_set* write_fds, fd_set* read_fds) {
 
 }
 
-void handle_player_input(int player_index, fd_set* write_fds) {
-    printf("in hand_input\n");
+void handle_player_input(int player_index, fd_set* write_fds, fd_set* read_fds) {
     char buffer[MAX_BUFFER];
     int bytes_read = read(players[player_index].socket, buffer, sizeof(buffer) - 1);
 
@@ -202,6 +201,8 @@ void handle_player_input(int player_index, fd_set* write_fds) {
         enqueue_message(disconnect_msg, players[player_index].id, write_fds);
         if (max_fd == players[player_index].socket)
             max_fd--;
+        FD_CLR(players[player_index].socket, read_fds);
+        FD_CLR(players[player_index].socket, write_fds);
         free_player(player_index);
 
         return;
@@ -235,6 +236,8 @@ void handle_player_input(int player_index, fd_set* write_fds) {
 
         // Generate a new target number
         target_number = rand() % 100 + 1;
+
+        max_fd = server_socket;
     }
 }
 
@@ -282,7 +285,6 @@ int main(int argc, char *argv[]) {
         read_fds = temp_read_fds;
         write_fds = temp_write_fds;
 
-
         int activity = select(max_fd + 1, &read_fds, &write_fds, NULL, NULL);
         if (activity < 0 && errno != EINTR) {
             perror("select");
@@ -298,7 +300,7 @@ int main(int argc, char *argv[]) {
         for (int i = 0; i < max_number_of_players && activity > 0; ++i) {
             if (players[i].active && FD_ISSET(players[i].socket, &read_fds)) {
                 printf("Server is ready to read from player %d on socket %d\n", players[i].id, players[i].socket);
-                handle_player_input(players[i].id, &temp_write_fds);
+                handle_player_input(i, &temp_write_fds, &temp_read_fds);
                 activity--;
             }
             if (players[i].active && FD_ISSET(players[i].socket, &write_fds)) {
