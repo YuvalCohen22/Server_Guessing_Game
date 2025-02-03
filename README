@@ -1,0 +1,29 @@
+--HTTP Server Guessing Game--
+Authored by Yuval Cohen 323071043
+ 
+An implementation of HTTP server that randomize a number and allows multiple players to connect and play the guessing game.
+The players can guess numbers and see if its higher or lower then te randomized number.
+When a player guesses the right answer and the winner is declared, the server closes all connections and awaits new players.
+
+--Features--
+
+-- Allows to create server.
+-- Allows multiple clients to connect to server and play the guessing game.
+-- After a winner is declared the server closes all connection and wait for new players.
+
+--Files--
+
+gameServer.c
+
+--Main Function--
+
+Creates server randomize a number and loop endlessly.
+each iteration using select to check if the server need to write to a client or read from it and 
+one by one send the messages to all player using a queue of messges for each player.
+
+--How To Compile--
+run gcc -Wall  gameServer.c -o server
+
+--How To Run--
+run ./server <port> <seed> <max-number-of-players>
+Example: ./server 1234 4 10 100

@@ -232,10 +232,10 @@ void handle_player_input(int player_index) {
     enqueue_message(response, -1);
 
     if (guess > target_number) {
-        snprintf(response, sizeof(response), "The guess %d is too high\n", guess);
+        snprintf(response, sizeof(response), "The guess in too high\n");
         enqueue_message(response, -1);
     } else if (guess < target_number) {
-        snprintf(response, sizeof(response), "The guess %d is too low\n", guess);
+        snprintf(response, sizeof(response), "The guess in too low\n");
         enqueue_message(response, -1);
     } else {
         game_over = 1;
@@ -302,7 +302,7 @@ int main(int argc, char *argv[]) {
             activity--;
         }
 
-        for (int i = 0; i < max_number_of_players && activity > 0; ++i) {
+        for (int i = max_number_of_players - 1; i >= 0 && activity > 0; --i) {
             if (players[i].active && FD_ISSET(players[i].socket, &read_fds)) {
                 printf("Server is ready to read from player %d on socket %d\n", players[i].id, players[i].socket);
                 handle_player_input(i);
