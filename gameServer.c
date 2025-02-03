@@ -210,8 +210,15 @@ void handle_player_input(int player_index) {
         char disconnect_msg[MAX_BUFFER];
         snprintf(disconnect_msg, sizeof(disconnect_msg), "Player %d disconnected\n", players[player_index].id);
         enqueue_message(disconnect_msg, players[player_index].id);
-        if (max_fd == players[player_index].socket)
-            max_fd--;
+        if (max_fd == players[player_index].socket) {
+            for (int i = 0; i < max_number_of_players; ++i) {
+                if (players[i].active) {
+                    if (players[i].socket > max_fd) {
+                        max_fd = players[i].socket;
+                    }
+                }
+            }
+        }
         free_player(player_index);
 
         return;
